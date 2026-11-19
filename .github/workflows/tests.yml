@@ -1,0 +1,20 @@
+name: Testes do motor
+
+on:
+  push:
+    paths: ["engine/**"]
+  pull_request:
+    paths: ["engine/**"]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q numpy pytest
+      - run: python -m pytest -q engine/tests
+        env:
+          PYTHONPATH: engine

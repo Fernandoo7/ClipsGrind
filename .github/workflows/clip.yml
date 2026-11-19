@@ -1,0 +1,107 @@
+name: Gerar clipes
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Link da live / VOD (YouTube, Twitch, Kick)"
+        required: true
+        type: string
+      max_clips:
+        description: "Quantos clipes (máximo)"
+        required: false
+        default: "6"
+        type: string
+      duration:
+        description: "Tamanho dos clipes"
+        required: false
+        default: "auto"
+        type: choice
+        options: [auto, curto, medio, longo]
+      lang:
+        description: "Idioma da fala (pt, en, es)"
+        required: false
+        default: "pt"
+        type: string
+      signal:
+        description: "Como achar os momentos"
+        required: false
+        default: "chat"
+        type: choice
+        options: [chat, audio]
+
+permissions:
+  contents: read
+  models: read   # GitHub Models: títulos/descrições grátis com o GITHUB_TOKEN
+
+concurrency:
+  group: clips-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  clip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: engine/requirements.txt
+
+      - name: Instalar ffmpeg e fontes
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-dejavu-core > /dev/null
+
+      - name: Instalar o motor
+        run: pip install -q -r engine/requirements.txt
+
+      - name: Cache do modelo de transcrição
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+
+      - name: Cookies do YouTube (opcional)
+        env:
+          YTDLP_COOKIES: ${{ secrets.YTDLP_COOKIES }}
+        run: |
+          if [ -n "$YTDLP_COOKIES" ]; then
+            printf '%s' "$YTDLP_COOKIES" > "$RUNNER_TEMP/cookies.txt"
+            echo "YTDLP_COOKIES_FILE=$RUNNER_TEMP/cookies.txt" >> "$GITHUB_ENV"
+            echo "usando cookies do YouTube"
+          fi
+
+      - name: Gerar clipes
+        working-directory: engine
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          URL: ${{ inputs.url }}
+          MAX_CLIPS: ${{ inputs.max_clips }}
+          DURATION: ${{ inputs.duration }}
+          LANG_CODE: ${{ inputs.lang }}
+          SIGNAL: ${{ inputs.signal }}
+        run: |
+          extra=""
+          if [ "$SIGNAL" = "audio" ]; then extra="--no-chat"; fi
+          python -m clipsgrind.cli "$URL" --max-clips "$MAX_CLIPS" --duration "$DURATION" --lang "$LANG_CODE" --out ../out $extra
+
+      - name: Resumo
+        if: always()
+        run: |
+          if [ -f out/resumo.md ]; then cat out/resumo.md >> "$GITHUB_STEP_SUMMARY"; else echo "Nenhum clipe gerado — veja o passo 'Gerar clipes'." >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Enviar clipes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipes
+          path: |
+            out/clips/
+            out/clips.json
+          if-no-files-found: warn
+          retention-days: 14
+
