@@ -89,6 +89,15 @@ jobs:
           if [ "$SIGNAL" = "audio" ]; then extra="--no-chat"; fi
           python -m clipsgrind.cli "$URL" --max-clips "$MAX_CLIPS" --duration "$DURATION" --lang "$LANG_CODE" --out ../out $extra
 
+      - name: Conferir arquivos
+        if: always()
+        run: |
+          for f in out/clips/*.mp4; do
+            [ -f "$f" ] || continue
+            echo "$f: $(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -show_entries format=duration,size -of compact=p=0:nk=1 "$f" | tr '\n' ' ')"
+          done
+          [ -f out/clips.json ] && python -c "import json;r=json.load(open('out/clips.json'));[print(c['file'],c['score'],c['title'],'|',c['hook'],'|',' '.join(c['hashtags']),'| fala:',c['transcript'][:80]) for c in r['clips']]" || true
+
       - name: Resumo
         if: always()
         run: |

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 
 ENDPOINT = "https://models.github.ai/inference/chat/completions"
@@ -35,18 +36,24 @@ def _llm(prompt: str) -> dict | None:
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
-        "response_format": {"type": "json_object"},
     }).encode()
     req = urllib.request.Request(ENDPOINT, data=body, headers={
         "Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json",
     })
+    raw = b""
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            data = json.loads(r.read())
-        return json.loads(data["choices"][0]["message"]["content"])
+            raw = r.read()
+        data = json.loads(raw)
+        content = data["choices"][0]["message"]["content"] or ""
+        m = re.search(r"\{.*\}", content, re.S)  # aceita resposta com ```json … ``` em volta
+        return json.loads(m.group(0) if m else content)
+    except urllib.error.HTTPError as e:
+        body = e.read()[:300].decode("utf-8", "replace")
+        print(f"[clipsgrind] LLM recusou ({e.code}): {body}; usando texto automático simples")
     except Exception as e:
-        print(f"[clipsgrind] LLM indisponível ({type(e).__name__}: {e}); usando texto automático simples")
-        return None
+        print(f"[clipsgrind] LLM indisponível ({type(e).__name__}: {e}; resposta: {raw[:200]!r}); usando texto automático simples")
+    return None
 
 
 def _fallback(transcript: str, live_title: str, channel: str, n: int) -> dict:
