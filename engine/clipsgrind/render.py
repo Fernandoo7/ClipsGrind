@@ -16,18 +16,39 @@ def transcribe(clip: Path, model_name: str = "small", language: str | None = "pt
         print(f"[clipsgrind] sem faster-whisper ({e}); clipe sai sem legenda")
         return []
     if not hasattr(transcribe, "_model"):
-        transcribe._model = WhisperModel(model_name, device="cpu", compute_type="int8")  # type: ignore[attr-defined]
+        try:
+            transcribe._model = WhisperModel(model_name, device="cpu", compute_type="int8")  # type: ignore[attr-defined]
+        except Exception as e:
+            print(f"[clipsgrind] não consegui carregar o modelo de transcrição ({e}); clipes saem sem legenda")
+            transcribe._model = None  # type: ignore[attr-defined]
+    if transcribe._model is None:  # type: ignore[attr-defined]
+        return []
     model = transcribe._model  # type: ignore[attr-defined]
-    segments, _ = model.transcribe(
-        str(clip), language=language or None, word_timestamps=True, vad_filter=True, beam_size=1
-    )
-    words = []
-    for seg in segments:
-        for w in seg.words or []:
-            text = w.word.strip()
-            if text:
-                words.append({"w": text, "s": float(w.start), "e": float(w.end)})
-    return words
+    try:
+        audio = _decode_audio_16k(clip)
+        segments, _ = model.transcribe(
+            audio, language=language or None, word_timestamps=True, vad_filter=True, beam_size=1
+        )
+        words = []
+        for seg in segments:
+            for w in seg.words or []:
+                text = w.word.strip()
+                if text:
+                    words.append({"w": text, "s": float(w.start), "e": float(w.end)})
+        return words
+    except Exception as e:
+        print(f"[clipsgrind] transcrição falhou ({type(e).__name__}: {e}); clipe sai sem legenda")
+        return []
+
+
+def _decode_audio_16k(clip: Path):
+    """Áudio mono 16 kHz float32 via ffmpeg (não depende do PyAV)."""
+    import numpy as np
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-i", str(clip), "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
+        capture_output=True, check=True,
+    ).stdout
+    return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 def _ts(t: float) -> str:
