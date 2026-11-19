@@ -11,8 +11,11 @@ import re
 import urllib.error
 import urllib.request
 
-ENDPOINT = "https://models.github.ai/inference/chat/completions"
-MODEL = os.environ.get("CLIPSGRIND_LLM_MODEL", "openai/gpt-4o-mini")
+# (endereço, nome do modelo) — tenta na ordem
+ENDPOINTS = [
+    ("https://models.github.ai/inference/chat/completions", os.environ.get("CLIPSGRIND_LLM_MODEL", "openai/gpt-4o-mini")),
+    ("https://models.inference.ai.azure.com/chat/completions", "gpt-4o-mini"),
+]
 
 PROMPT = """Você escreve textos para YouTube Shorts a partir de cortes de lives.
 Live: "{live_title}" — canal: {channel}
@@ -32,15 +35,24 @@ def _llm(prompt: str) -> dict | None:
     token = os.environ.get("GITHUB_TOKEN")
     if not token or os.environ.get("CLIPSGRIND_NO_LLM"):
         return None
+    for endpoint, model in ENDPOINTS:
+        out = _call(endpoint, model, token, prompt)
+        if out is not None:
+            return out
+    return None
+
+
+def _call(endpoint: str, model: str, token: str, prompt: str) -> dict | None:
     body = json.dumps({
-        "model": MODEL,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7,
     }).encode()
-    req = urllib.request.Request(ENDPOINT, data=body, headers={
+    req = urllib.request.Request(endpoint, data=body, method="POST", headers={
         "Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json",
     })
     raw = b""
+    host = endpoint.split("/")[2]
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             raw = r.read()
@@ -49,10 +61,10 @@ def _llm(prompt: str) -> dict | None:
         m = re.search(r"\{.*\}", content, re.S)  # aceita resposta com ```json … ``` em volta
         return json.loads(m.group(0) if m else content)
     except urllib.error.HTTPError as e:
-        body = e.read()[:300].decode("utf-8", "replace")
-        print(f"[clipsgrind] LLM recusou ({e.code}): {body}; usando texto automático simples")
+        body_txt = e.read()[:300].decode("utf-8", "replace")
+        print(f"[clipsgrind] IA ({host}) recusou ({e.code}): {body_txt}")
     except Exception as e:
-        print(f"[clipsgrind] LLM indisponível ({type(e).__name__}: {e}; resposta: {raw[:200]!r}); usando texto automático simples")
+        print(f"[clipsgrind] IA ({host}) falhou ({type(e).__name__}; resposta: {raw[:120]!r})")
     return None
 
 
