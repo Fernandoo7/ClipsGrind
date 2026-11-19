@@ -122,6 +122,7 @@ def summary_md(r: dict) -> str:
 
 
 def main() -> None:
+    import sys
     p = argparse.ArgumentParser(prog="clipsgrind")
     p.add_argument("source", help="link da live/VOD ou caminho de um vídeo")
     p.add_argument("--max-clips", type=int, default=6)
@@ -135,7 +136,11 @@ def main() -> None:
     p.add_argument("--title")
     p.add_argument("--channel")
     p.add_argument("--keep-work", action="store_true")
-    run(p.parse_args())
+    try:
+        run(p.parse_args())
+    except sources.SourceBlocked as e:
+        print(f"::error title=Link bloqueado::{e}")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

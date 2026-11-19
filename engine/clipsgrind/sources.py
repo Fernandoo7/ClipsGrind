@@ -22,8 +22,22 @@ def _ytdlp_base() -> list[str]:
     return cmd
 
 
+class SourceBlocked(RuntimeError):
+    pass
+
+
 def fetch_info(url: str) -> dict:
-    out = subprocess.run(_ytdlp_base() + ["-J", url], check=True, capture_output=True, text=True)
+    out = subprocess.run(_ytdlp_base() + ["-J", url], capture_output=True, text=True)
+    if out.returncode != 0:
+        err = (out.stderr or "").strip().splitlines()
+        last = err[-1] if err else "erro desconhecido"
+        log(f"yt-dlp: {last}")
+        if "bot" in last.lower() or "sign in" in last.lower():
+            raise SourceBlocked(
+                "O YouTube pediu verificação de robô para o servidor do GitHub. "
+                "Adicione o secret YTDLP_COOKIES (cookies.txt da sua conta) e rode de novo — instruções no README."
+            )
+        raise SourceBlocked(f"Não consegui abrir o link: {last}")
     info = json.loads(out.stdout)
     return {
         "title": info.get("title") or "Live",
