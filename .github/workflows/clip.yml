@@ -32,7 +32,6 @@ on:
 
 permissions:
   contents: read
-  models: read   # GitHub Models: títulos/descrições grátis com o GITHUB_TOKEN
 
 concurrency:
   group: clips-${{ github.ref }}
@@ -78,7 +77,9 @@ jobs:
       - name: Gerar clipes
         working-directory: engine
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}     # opcional: chave grátis do Gemini (aistudio.google.com)
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
           URL: ${{ inputs.url }}
           MAX_CLIPS: ${{ inputs.max_clips }}
           DURATION: ${{ inputs.duration }}

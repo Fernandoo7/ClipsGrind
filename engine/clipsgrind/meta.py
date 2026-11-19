@@ -1,7 +1,8 @@
 """Título, gancho, descrição e hashtags de cada clipe.
 
-Usa o GitHub Models (grátis dentro do GitHub Actions com o GITHUB_TOKEN). Se não estiver disponível,
-cai num gerador simples a partir da transcrição — o clipe nunca fica sem texto.
+Usa qualquer IA com API compatível com OpenAI. Padrão: Google Gemini (chave grátis no AI Studio),
+configurada pelo secret LLM_API_KEY. Sem chave, cai num gerador simples a partir da transcrição —
+o clipe nunca fica sem texto.
 """
 from __future__ import annotations
 
@@ -11,11 +12,7 @@ import re
 import urllib.error
 import urllib.request
 
-# (endereço, nome do modelo) — tenta na ordem
-ENDPOINTS = [
-    ("https://models.github.ai/inference/chat/completions", os.environ.get("CLIPSGRIND_LLM_MODEL", "openai/gpt-4o-mini")),
-    ("https://models.inference.ai.azure.com/chat/completions", "gpt-4o-mini"),
-]
+GEMINI_OPENAI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 
 PROMPT = """Você escreve textos para YouTube Shorts a partir de cortes de lives.
 Live: "{live_title}" — canal: {channel}
@@ -32,14 +29,12 @@ LANG_NAMES = {"pt": "português do Brasil", "en": "inglês", "es": "espanhol"}
 
 
 def _llm(prompt: str) -> dict | None:
-    token = os.environ.get("GITHUB_TOKEN")
-    if not token or os.environ.get("CLIPSGRIND_NO_LLM"):
+    key = os.environ.get("LLM_API_KEY")
+    if not key or os.environ.get("CLIPSGRIND_NO_LLM"):
         return None
-    for endpoint, model in ENDPOINTS:
-        out = _call(endpoint, model, token, prompt)
-        if out is not None:
-            return out
-    return None
+    endpoint = os.environ.get("LLM_BASE_URL") or GEMINI_OPENAI_URL
+    model = os.environ.get("LLM_MODEL") or "gemini-2.5-flash"
+    return _call(endpoint, model, key, prompt)
 
 
 def _call(endpoint: str, model: str, token: str, prompt: str) -> dict | None:
@@ -71,7 +66,7 @@ def _call(endpoint: str, model: str, token: str, prompt: str) -> dict | None:
 def _fallback(transcript: str, live_title: str, channel: str, n: int) -> dict:
     words = re.findall(r"\w[\w'-]*", transcript)
     snippet = " ".join(words[:9]).strip()
-    title = (snippet[:1].upper() + snippet[1:]) if snippet else f"Momento {n} da live"
+    title = (snippet[:1].upper() + snippet[1:]) if snippet else f"Momento {n} — {live_title}"
     if len(title) > 60:
         title = title[:57].rsplit(" ", 1)[0] + "…"
     tag = re.sub(r"[^\w]", "", channel.lower()) if channel else ""
